@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: arch-cleaner
+Version: 0.1.0
+Summary: Arch Linux AI Storage Agent - Manage and optimize system storage.
+Home-page: <your_repository_url_here>
+Author: Cline (AI Assistant)
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Topic :: System :: Filesystems
+Classifier: Topic :: System :: Archiving :: Backup
+Classifier: Topic :: Utilities
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: toml>=0.10.2
+Requires-Dist: rich>=13.0.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

@@ -1,0 +1,102 @@
+# Example Configuration for Arch Linux AI Storage Agent
+
+# --- General Settings ---
+# Aggressiveness level (e.g., 1=Cautious, 2=Balanced, 3=Aggressive)
+# Affects thresholds and suggestion confidence.
+aggressiveness = 2
+
+# --- Safety Settings ---
+# Use the system trash (freedesktop.org spec) when deleting files.
+# If false, files will be permanently deleted (use with extreme caution!).
+use_trash = true
+# Default to dry-run mode for 'apply' and 'auto' commands.
+# If true, you must explicitly pass a flag to perform real actions.
+default_dry_run = false
+
+# --- Scan Paths ---
+# List of directories to scan for user files, caches, logs etc.
+# Use absolute paths or paths relative to the user's home directory (~).
+scan_paths = [
+    "~/.cache",
+    "~/Downloads",
+    "~/.local/share",
+    # Add other relevant paths, e.g., specific project directories
+    # "/var/log", # Requires root privileges to scan/clean
+    # "/tmp",
+]
+
+# --- Exclusions ---
+# List of glob patterns to exclude from scanning and cleaning.
+# Applies to files and directories.
+exclude_patterns = [
+    "*/.git/*",
+    "*/node_modules/*",
+    "*/__pycache__/*",
+    "*.important",
+    "~/.config/*", # Generally avoid cleaning config files unless specifically targeted
+    "~/.local/share/Steam/*", # Example: Exclude Steam games library
+]
+
+# --- File Analysis Thresholds ---
+# Define what constitutes an "old" file based on access time (atime).
+# Format: number followed by d (days), w (weeks), m (months), y (years)
+old_file_threshold = "3m" # Files not accessed in 3 months
+
+# Define what constitutes a "large" file.
+# Format: number followed by K, M, G (KB, MB, GB)
+large_file_threshold = "500M" # Files larger than 500 MB
+
+# --- Arch Linux Specific Cleanup ---
+[arch]
+# Clean pacman cache?
+clean_pacman_cache = true
+# Number of package versions to keep in pacman cache (paccache -rk<N>)
+pacman_cache_keep = 1
+
+# Remove uninstalled packages from pacman cache? (pacman -Sc)
+# Note: 'paccache -ruk0' is generally safer if you might reinstall.
+# Set clean_pacman_cache to true and pacman_cache_keep = 0 for similar effect.
+clean_uninstalled_cache = false # Be cautious with pacman -Sc
+
+# Suggest removing orphan packages? (pacman -Qtdq)
+remove_orphans = true
+
+# Clean journald logs?
+clean_journal = true
+# Maximum disk space for journal logs (e.g., "500M", "1G")
+journal_max_disk_size = "500M"
+# Alternatively, maximum age for journal logs (e.g., "2weeks", "1month")
+# journal_max_age = "1month" # Uncomment one or the other
+
+# --- Duplicate Detection ---
+[duplicates]
+# Enable duplicate file detection (can be resource intensive).
+enabled = true
+# Minimum file size to consider for duplicate checking.
+min_size = "1M"
+# Paths specifically to check for duplicates (if empty, uses scan_paths).
+# scan_paths = ["~/Documents", "~/Downloads"]
+
+# --- Automation ---
+[automation]
+# Enable automatic cleanup based on schedule or threshold.
+enabled = false
+# Schedule for automatic runs (cron format or systemd timer string).
+# Examples: "daily", "weekly", "0 3 * * *" (3 AM every day)
+# This might be better managed by systemd timers directly.
+schedule = "weekly"
+
+# Trigger auto-cleanup if free disk space falls below this threshold.
+# Format: percentage ("10%") or absolute size ("5G")
+free_space_threshold = "10%"
+
+# Only apply suggestions with confidence score >= this level during auto runs.
+# (Requires confidence scoring implementation)
+# min_confidence = 0.8
+
+# --- Learning Module ---
+[learning]
+# Enable adaptive learning based on user feedback.
+enabled = true
+# How many feedback entries to keep (0 for unlimited).
+# feedback_history_limit = 1000
