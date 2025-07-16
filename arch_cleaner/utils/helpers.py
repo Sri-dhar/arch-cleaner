@@ -17,15 +17,10 @@ SIZE_UNITS = {
 }
 
 TIME_UNITS = {
-    "s": 1,
-    "m": 60,
-    "h": 3600,
-    "d": 86400,
-    "w": 86400 * 7,
-    # Approximate month/year - use carefully
-    "month": 86400 * 30,
-    "y": 86400 * 365,
+    "s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800,
+    "month": 2592000, "y": 31536000,
 }
+
 
 def parse_size(size_str: str) -> Optional[int]:
     """
@@ -35,7 +30,6 @@ def parse_size(size_str: str) -> Optional[int]:
     size_str = str(size_str).strip().upper()
     match = re.match(r'^(\d+(\.\d+)?)\s*([BKMGT])?B?$', size_str)
     if not match:
-        # Check if it's just a number (assume bytes)
         if size_str.isdigit():
             return int(size_str)
         logger.warning(f"Could not parse size string: '{size_str}'")
@@ -43,24 +37,14 @@ def parse_size(size_str: str) -> Optional[int]:
 
     value = float(match.group(1))
     unit = match.group(3)
-
-    if unit:
-        multiplier = SIZE_UNITS.get(unit, 1)
-    else:
-        # If no unit, assume bytes if it looks like an integer, otherwise fail
-        if '.' not in match.group(1):
-             multiplier = 1
-        else:
-             logger.warning(f"Could not parse size string without unit: '{size_str}'")
-             return None
-
+    multiplier = SIZE_UNITS.get(unit, 1) if unit else 1
 
     return int(value * multiplier)
+
 
 def parse_duration(duration_str: str) -> Optional[int]:
     """
     Parses a human-readable duration string (e.g., "3m", "2w", "1y") into seconds.
-    Handles units: s, m, h, d, w, month, y.
     Returns None if parsing fails.
     """
     duration_str = str(duration_str).strip().lower()
@@ -70,14 +54,15 @@ def parse_duration(duration_str: str) -> Optional[int]:
         return None
 
     value = float(match.group(1))
-    unit = match.group(3) if match.group(3) else 's' # Default to seconds if no unit
-
+    unit = match.group(3) or 's'
     multiplier = TIME_UNITS.get(unit)
+
     if multiplier is None:
         logger.warning(f"Unknown time unit '{unit}' in duration string: '{duration_str}'")
         return None
 
     return int(value * multiplier)
+
 
 def get_age_seconds(timestamp: float) -> float:
     """Calculates the age of a timestamp in seconds."""
@@ -86,75 +71,62 @@ def get_age_seconds(timestamp: float) -> float:
 def run_command(command: List[str], capture_output: bool = True, check: bool = False, **kwargs) -> subprocess.CompletedProcess:
     """
     Runs an external command safely using subprocess.run.
-
     Args:
-        command: A list of command arguments (e.g., ['ls', '-l']).
+        command: A list of command arguments.
         capture_output: If True, capture stdout and stderr.
-        check: If True, raise CalledProcessError if the command returns non-zero exit code.
-        **kwargs: Additional arguments to pass to subprocess.run.
-
+        check: If True, raise CalledProcessError on non-zero exit code.
+        **kwargs: Additional arguments for subprocess.run.
     Returns:
         A subprocess.CompletedProcess object.
     """
     logger.debug(f"Running command: {' '.join(command)}")
     try:
-        # Ensure text=True for readable output if capturing
         if capture_output and 'text' not in kwargs:
             kwargs['text'] = True
         if capture_output and 'capture_output' not in kwargs:
-             kwargs['capture_output'] = True
+            kwargs['capture_output'] = True
 
         result = subprocess.run(command, check=check, **kwargs)
         if result.returncode != 0:
             logger.warning(f"Command '{' '.join(command)}' exited with code {result.returncode}")
             if capture_output and result.stderr:
-                 logger.warning(f"Stderr: {result.stderr.strip()}")
+                logger.warning(f"Stderr: {result.stderr.strip()}")
         return result
     except FileNotFoundError:
         logger.error(f"Command not found: {command[0]}")
-        # Create a dummy CompletedProcess to indicate failure
         return subprocess.CompletedProcess(command, -1, stdout="", stderr=f"Command not found: {command[0]}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Command '{' '.join(command)}' failed with error: {e}")
-        if capture_output:
-            logger.error(f"Stdout: {e.stdout}")
-            logger.error(f"Stderr: {e.stderr}")
-        raise # Re-raise if check=True was used
+        logger.error(f"Command '{' '.join(command)}' failed: {e}")
+        raise
     except Exception as e:
         logger.error(f"An unexpected error occurred running command '{' '.join(command)}': {e}", exc_info=True)
-        # Create a dummy CompletedProcess
         return subprocess.CompletedProcess(command, -1, stdout="", stderr=str(e))
 
 
 def is_path_excluded(path: Path, exclude_patterns: List[str]) -> bool:
     """
-    Checks if a given path matches any of the exclusion glob patterns.
-
+    Checks if a path matches any of the exclusion glob patterns.
     Args:
         path: The Path object to check.
-        exclude_patterns: A list of glob patterns (e.g., ["*.tmp", "/path/to/ignore/*"]).
-
+        exclude_patterns: A list of glob patterns.
     Returns:
         True if the path matches any pattern, False otherwise.
     """
-    path_str = str(path.resolve()) # Use resolved absolute path for matching
+    path_str = str(path.resolve())
     for pattern in exclude_patterns:
-        # fnmatch needs string paths
         if fnmatch.fnmatch(path_str, pattern):
             logger.debug(f"Path '{path_str}' excluded by pattern '{pattern}'")
             return True
-        # Also check if any parent directory matches a pattern ending in /*
-        # This handles cases like excluding 'node_modules/*'
         if pattern.endswith('/*'):
-            base_pattern = pattern[:-2] # Remove '/*'
+            base_pattern = pattern[:-2]
             current = path
-            while current != current.parent: # Stop at root
-                 if fnmatch.fnmatch(str(current.resolve()), base_pattern):
-                      logger.debug(f"Path '{path_str}' excluded because parent '{current}' matches pattern '{pattern}'")
-                      return True
-                 current = current.parent
-
+            while current != current.parent:
+                if fnmatch.fnmatch(str(current.resolve()), base_pattern):
+                    logger.debug(f"Path '{path_str}' excluded by parent match on '{pattern}'")
+                    return True
+                current = current.parent
     return False
+
 
 def human_readable_size(size_bytes: int) -> str:
     """Converts bytes to a human-readable string (KB, MB, GB)."""
@@ -175,21 +147,12 @@ def calculate_hash(path: Path, algorithm: str = 'sha256') -> Optional[str]:
     import hashlib
     hasher = hashlib.new(algorithm)
     try:
-        with open(path, 'rb') as file:
-            while True:
-                chunk = file.read(4096) # Read in chunks
-                if not chunk:
-                    break
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
                 hasher.update(chunk)
         return hasher.hexdigest()
-    except FileNotFoundError:
-        logger.warning(f"File not found for hashing: {path}")
-        return None
-    except IOError as e:
-        logger.error(f"Error reading file for hashing {path}: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error hashing file {path}: {e}", exc_info=True)
+    except (FileNotFoundError, IOError) as e:
+        logger.error(f"Error hashing file {path}: {e}")
         return None
 
 

@@ -1,87 +1,72 @@
 import logging
 import time
-from typing import Optional, Any # Added Any
+from typing import Optional, Any
 
-from ..core.models import Suggestion, ActionFeedback, ActionResult
+from ..core.models import Suggestion, ActionFeedback
 from ..db.database import DatabaseManager
 from ..modules.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+
 class LearningModule:
     """Handles learning from user feedback to adapt suggestions."""
 
     def __init__(self, config_manager: ConfigManager, db_manager: DatabaseManager):
+        """
+        Initializes the LearningModule.
+        Args:
+            config_manager: Manages configuration settings.
+            db_manager: Manages database interactions.
+        """
         self.config = config_manager
         self.db = db_manager
         self.learning_enabled = self.config.get('learning.enabled', True)
-        self.feedback_limit = self.config.get('learning.feedback_history_limit', 1000) # TODO: Implement pruning
-
         if not self.learning_enabled:
             logger.info("Learning module is disabled in configuration.")
 
     def record_feedback(self, suggestion: Suggestion, action_taken: str, user_comment: Optional[str] = None):
         """
         Records user feedback about a specific suggestion into the database.
-
         Args:
             suggestion: The Suggestion object the feedback pertains to.
-            action_taken: The action performed by the user (e.g., 'APPROVED', 'REJECTED', 'SKIPPED').
+            action_taken: The action performed by the user (e.g., 'APPROVED', 'REJECTED').
             user_comment: Optional comment from the user.
         """
         if not self.learning_enabled:
             return
 
-        # Extract relevant details for storage (avoid storing large data objects)
-        item_details = suggestion.details # Use the pre-formatted details string
-
         feedback = ActionFeedback(
             suggestion_id=suggestion.id,
-            # suggestion_type=suggestion.suggestion_type, # Removed incorrect argument
-            # item_details=item_details, # Removed incorrect argument
+            suggestion_type=suggestion.suggestion_type,
+            item_details=suggestion.details,
             action_taken=action_taken,
-            timestamp=time.time(), # Use current time for feedback
+            timestamp=time.time(),
             user_comment=user_comment
         )
 
         try:
             self.db.add_feedback(feedback)
-            logger.debug(f"Recorded feedback: Suggestion {suggestion.id}, Action {action_taken}")
-            # TODO: Prune old feedback if limit is configured and > 0
+            logger.debug(f"Recorded feedback for suggestion {suggestion.id}: {action_taken}")
         except Exception as e:
             logger.error(f"Failed to record feedback for suggestion {suggestion.id}: {e}", exc_info=True)
 
     def adapt_rules(self):
-        """
-        (Placeholder) Adapts internal rules or thresholds based on stored feedback.
-        This could involve analyzing patterns in rejected/approved suggestions.
-        """
+        """(Placeholder) Adapts internal rules based on stored feedback."""
         if not self.learning_enabled:
             return
         logger.info("Placeholder: Adapting rules based on feedback (not implemented).")
-        # Example: Fetch feedback, analyze rejection patterns for certain file types/ages,
-        # adjust thresholds in config or internal state.
-        # feedback_data = self.db.get_feedback(limit=self.feedback_limit)
-        # ... analysis logic ...
 
     def train_model(self):
-        """
-        (Placeholder) Trains or retrains an ML model based on stored feedback.
-        Requires ML libraries (e.g., scikit-learn) and feature engineering.
-        """
+        """(Placeholder) Trains an ML model based on stored feedback."""
         if not self.learning_enabled:
             return
         logger.info("Placeholder: Training ML model based on feedback (not implemented).")
 
     def get_confidence_adjustment(self, suggestion_type: str, item_details: Any) -> float:
-        """
-        (Placeholder) Returns an adjustment factor for suggestion confidence based on learned data.
-        Could use simple rules or ML model predictions.
-        """
+        """(Placeholder) Returns a confidence adjustment factor based on learned data."""
         if not self.learning_enabled:
-            return 1.0 # No adjustment if disabled
-
-        # TODO: Implement logic based on feedback analysis or ML model prediction
+            return 1.0
         return 1.0
 
 # Example Usage

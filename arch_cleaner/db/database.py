@@ -5,11 +5,10 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Tuple, Any, Dict
 
-# Assuming models are defined in core.models
-# Adjust import path if structure changes
 from ..core.models import ScannedItem, PackageInfo, DuplicateSet, ActionFeedback
 
 logger = logging.getLogger(__name__)
+
 
 class DatabaseManager:
     """Handles all interactions with the SQLite database."""
@@ -23,18 +22,15 @@ class DatabaseManager:
     def _connect(self):
         """Establishes a connection to the SQLite database."""
         try:
-            # Ensure the directory exists
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            # `check_same_thread=False` might be needed if accessed by different threads,
-            # but requires careful handling of transactions. Start with True.
             self.conn = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
-            self.conn.row_factory = sqlite3.Row # Access columns by name
+            self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys = ON;")
             logger.info(f"Connected to database: {self.db_path}")
         except sqlite3.Error as e:
             logger.error(f"Error connecting to database {self.db_path}: {e}", exc_info=True)
-            self.conn = None # Ensure conn is None if connection failed
-            raise # Re-raise the exception to signal failure
+            self.conn = None
+            raise
 
     def _create_tables(self):
         """Creates necessary database tables if they don't exist."""
@@ -42,9 +38,6 @@ class DatabaseManager:
             logger.error("Cannot create tables, no database connection.")
             return
 
-        # Use TEXT for paths as Path objects are not directly storable
-        # Use REAL for timestamps (Unix epoch float)
-        # Use TEXT for JSON storage of complex fields like lists/dicts
         sql_statements = [
             """
             CREATE TABLE IF NOT EXISTS scan_history (
@@ -63,10 +56,10 @@ class DatabaseManager:
                 size_bytes INTEGER NOT NULL,
                 last_accessed REAL NOT NULL,
                 last_modified REAL NOT NULL,
-                item_type TEXT NOT NULL, -- 'file', 'directory', 'cache', 'log' etc.
-                file_hash TEXT, -- SHA256 hash for duplicate detection
+                item_type TEXT NOT NULL,
+                file_hash TEXT,
                 is_duplicate BOOLEAN DEFAULT FALSE,
-                extra_info TEXT, -- JSON dictionary for additional data
+                extra_info TEXT,
                 FOREIGN KEY (scan_id) REFERENCES scan_history(scan_id) ON DELETE CASCADE
             );
             """,
@@ -87,25 +80,24 @@ class DatabaseManager:
                 size_bytes INTEGER NOT NULL,
                 description TEXT,
                 install_date REAL,
-                last_used REAL, -- Heuristic
+                last_used REAL,
                 is_orphan BOOLEAN DEFAULT FALSE,
                 is_dependency BOOLEAN DEFAULT FALSE,
-                required_by TEXT, -- JSON list
-                optional_for TEXT, -- JSON list
+                required_by TEXT,
+                optional_for TEXT,
                 FOREIGN KEY (scan_id) REFERENCES scan_history(scan_id) ON DELETE CASCADE
             );
             """,
-             """
+            """
             CREATE INDEX IF NOT EXISTS idx_packages_orphan ON packages(is_orphan);
             """,
-            # Removed duplicate_sets and duplicate_files tables, will mark items in scanned_items directly
             """
             CREATE TABLE IF NOT EXISTS action_feedback (
                 feedback_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                suggestion_id TEXT NOT NULL, -- Corresponds to Suggestion.id
+                suggestion_id TEXT NOT NULL,
                 suggestion_type TEXT NOT NULL,
-                item_details TEXT NOT NULL, -- e.g., file path, package name
-                action_taken TEXT NOT NULL, -- 'APPROVED', 'REJECTED', 'SKIPPED'
+                item_details TEXT NOT NULL,
+                action_taken TEXT NOT NULL,
                 timestamp REAL NOT NULL,
                 user_comment TEXT
             );
@@ -116,17 +108,15 @@ class DatabaseManager:
             """
             CREATE INDEX IF NOT EXISTS idx_feedback_type ON action_feedback(suggestion_type);
             """
-            # Removed current_suggestions table
         ]
         try:
-            with self.conn: # Context manager handles commit/rollback
+            with self.conn:
                 cursor = self.conn.cursor()
                 for statement in sql_statements:
                     cursor.execute(statement)
                 logger.info("Database tables created or verified successfully.")
         except sqlite3.Error as e:
             logger.error(f"Error creating database tables: {e}", exc_info=True)
-            # Consider closing connection or handling more gracefully
             raise
 
     def execute_sql(self, sql: str, params: tuple = ()) -> Optional[sqlite3.Cursor]:
@@ -140,10 +130,10 @@ class DatabaseManager:
             return cursor
         except sqlite3.Error as e:
             logger.error(f"Error executing SQL: {sql} with params {params} - {e}", exc_info=True)
-            return None # Or re-raise
+            return None
 
     def execute_script(self, sql_script: str) -> bool:
-        """Executes a potentially multi-statement SQL script."""
+        """Executes a multi-statement SQL script."""
         if not self.conn:
             logger.error("Cannot execute script, no database connection.")
             return False
@@ -166,9 +156,11 @@ class DatabaseManager:
         """Updates the scan history record upon completion."""
         sql_get_start = "SELECT start_time FROM scan_history WHERE scan_id = ?"
         cursor_start = self.execute_sql(sql_get_start, (scan_id,))
-        if not cursor_start: return
+        if not cursor_start:
+            return
         row = cursor_start.fetchone()
-        if not row: return
+        if not row:
+            return
 
         start_time = row['start_time']
         end_time = time.time()
@@ -180,7 +172,8 @@ class DatabaseManager:
             WHERE scan_id = ?
         """
         self.execute_sql(sql_update, (end_time, duration, items_found, errors, scan_id))
-        if self.conn: self.conn.commit() # Commit after update
+        if self.conn:
+            self.conn.commit()
 
     def get_last_scan_time(self) -> Optional[float]:
         """Gets the end time of the most recent successful scan."""
@@ -195,14 +188,12 @@ class DatabaseManager:
     def clear_scan_data(self, scan_id: int):
         """Removes data associated with a specific scan ID."""
         logger.warning(f"Clearing data for scan_id: {scan_id}")
-        # Order matters due to foreign keys
         sqls = [
             "DELETE FROM scanned_items WHERE scan_id = ?",
             "DELETE FROM packages WHERE scan_id = ?",
-            # Keep scan_history record but maybe mark as cleared? Or delete?
-            # "DELETE FROM scan_history WHERE scan_id = ?"
         ]
-        if not self.conn: return
+        if not self.conn:
+            return
         try:
             with self.conn:
                 for sql in sqls:
@@ -210,7 +201,6 @@ class DatabaseManager:
             logger.info(f"Successfully cleared data for scan_id: {scan_id}")
         except sqlite3.Error as e:
             logger.error(f"Error clearing scan data for scan_id {scan_id}: {e}", exc_info=True)
-
 
     def add_scanned_items_batch(self, items: List[ScannedItem], scan_id: int):
         """Adds a batch of scanned items to the database."""
@@ -284,10 +274,9 @@ class DatabaseManager:
         return [Path(row['path']) for row in cursor.fetchall()] if cursor else []
 
     def mark_duplicates(self, file_hash: str):
-         """Marks all files with a given hash as duplicates."""
-         sql = "UPDATE scanned_items SET is_duplicate = TRUE WHERE file_hash = ?"
-         self.execute_sql(sql, (file_hash,))
-         # Commit handled by caller or context manager
+        """Marks all files with a given hash as duplicates."""
+        sql = "UPDATE scanned_items SET is_duplicate = TRUE WHERE file_hash = ?"
+        self.execute_sql(sql, (file_hash,))
 
     def delete_scanned_item(self, path: Path):
         """Deletes a scanned item record from the database."""
@@ -378,7 +367,8 @@ class DatabaseManager:
 
     def get_feedback(self, limit: int = 100) -> List[ActionFeedback]:
         """Retrieves recent action feedback."""
-        if not self.conn: return []
+        if not self.conn:
+            return []
         sql = """
             SELECT suggestion_id, suggestion_type, item_details, action_taken, timestamp, user_comment
             FROM action_feedback
@@ -389,19 +379,15 @@ class DatabaseManager:
         feedback_list = []
         if cursor:
             for row in cursor.fetchall():
-                 # Need suggestion_type and item_details to reconstruct ActionFeedback fully
-                 # Assuming they are stored correctly
-                 feedback_list.append(ActionFeedback(
-                     suggestion_id=row['suggestion_id'],
-                     suggestion_type=row['suggestion_type'], # Added field
-                     item_details=row['item_details'],       # Added field
-                     action_taken=row['action_taken'],
-                     timestamp=row['timestamp'],
-                     user_comment=row['user_comment']
-                 ))
+                feedback_list.append(ActionFeedback(
+                    suggestion_id=row['suggestion_id'],
+                    suggestion_type=row['suggestion_type'],
+                    item_details=row['item_details'],
+                    action_taken=row['action_taken'],
+                    timestamp=row['timestamp'],
+                    user_comment=row['user_comment']
+                ))
         return feedback_list
-
-    # Removed Suggestion Persistence Methods
 
     def close(self):
         """Closes the database connection."""

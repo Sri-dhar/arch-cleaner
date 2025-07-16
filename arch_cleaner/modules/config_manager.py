@@ -7,33 +7,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Define default configuration structure and values
 DEFAULT_CONFIG = {
-    "general": {
-        "aggressiveness": 2,
-    },
-    "safety": {
-        "use_trash": True,
-        "default_dry_run": False,
-    },
+    "general": {"aggressiveness": 2},
+    "safety": {"use_trash": True, "default_dry_run": False},
     "paths": {
-        "scan": [
-            "~/.cache",
-            "~/Downloads",
-            "~/.local/share",
-        ],
-        "exclude": [
-            "*/.git/*",
-            "*/node_modules/*",
-            "*/__pycache__/*",
-            "*.important",
-            "~/.config/*",
-        ],
+        "scan": ["~/.cache", "~/Downloads", "~/.local/share"],
+        "exclude": ["*/.git/*", "*/node_modules/*", "*/__pycache__/*", "*.important", "~/.config/*"],
     },
-    "thresholds": {
-        "old_file": "3m", # 3 months
-        "large_file": "500M", # 500 MB
-    },
+    "thresholds": {"old_file": "3m", "large_file": "500M"},
     "arch": {
         "clean_pacman_cache": True,
         "pacman_cache_keep": 1,
@@ -41,24 +22,18 @@ DEFAULT_CONFIG = {
         "remove_orphans": True,
         "clean_journal": True,
         "journal_max_disk_size": "500M",
-        "journal_max_age": None, # Prioritize size by default
+        "journal_max_age": None,
     },
-    "duplicates": {
-        "enabled": True,
-        "min_size": "1M",
-        "scan_paths": [], # Empty means use general scan_paths
-    },
+    "duplicates": {"enabled": True, "min_size": "1M", "scan_paths": []},
     "automation": {
         "enabled": False,
         "schedule": "weekly",
         "free_space_threshold": "10%",
         "min_confidence": 0.8,
     },
-    "learning": {
-        "enabled": True,
-        "feedback_history_limit": 1000,
-    }
+    "learning": {"enabled": True, "feedback_history_limit": 1000},
 }
+
 
 class ConfigManager:
     """Manages loading and accessing the application configuration."""
@@ -77,22 +52,13 @@ class ConfigManager:
         """Reads the TOML configuration file."""
         if not self.config_path.exists():
             logger.warning(f"Configuration file not found at {self.config_path}. Using default settings.")
-            # In a real scenario, might prompt user or copy example config here if not handled by main.py/installer
             return {}
         try:
             with open(self.config_path, 'r') as f:
-                loaded_config = toml.load(f)
-                logger.info(f"Successfully loaded configuration from {self.config_path}")
-                return loaded_config
-        except toml.TomlDecodeError as e:
-            logger.error(f"Error decoding TOML file {self.config_path}: {e}")
-            print(f"Error: Invalid configuration file format in {self.config_path}. Please check the syntax.", file=sys.stderr)
+                return toml.load(f)
+        except (toml.TomlDecodeError, IOError) as e:
+            logger.error(f"Error reading or parsing config file {self.config_path}: {e}")
             sys.exit(1)
-        except IOError as e:
-            logger.error(f"Error reading configuration file {self.config_path}: {e}")
-            print(f"Error: Could not read configuration file {self.config_path}.", file=sys.stderr)
-            sys.exit(1)
-        return {}
 
     def _deep_merge_dicts(self, base: Dict, overlay: Dict) -> Dict:
         """Recursively merges two dictionaries. Overlay values take precedence."""
@@ -118,17 +84,10 @@ class ConfigManager:
                 expanded_list = []
                 for path_str in self.config[section][key]:
                     if isinstance(path_str, str):
-                        # Expand ~ and environment variables
-                        p = os.path.expanduser(os.path.expandvars(path_str))
-                        # Make absolute if not already (relative paths could be ambiguous)
-                        # We might want paths relative to home, but absolute is safer generally.
-                        # Let's keep them as potentially relative for now, interpretation depends on usage.
-                        # expanded_list.append(str(Path(p).resolve())) # Option: Make absolute
-                        expanded_list.append(p)
+                        expanded_list.append(os.path.expanduser(os.path.expandvars(path_str)))
                     else:
-                        expanded_list.append(path_str) # Keep non-string items as is
+                        expanded_list.append(path_str)
                 self.config[section][key] = expanded_list
-
 
     def get(self, key_path: str, default: Any = None) -> Any:
         """
@@ -139,21 +98,11 @@ class ConfigManager:
         value = self.config
         try:
             for key in keys:
-                if isinstance(value, dict):
-                    value = value[key]
-                else:
-                    # Handle case where intermediate key is not a dict
-                    logger.warning(f"Config key path '{key_path}' intermediate key '{key}' is not a dictionary.")
-                    return default
+                value = value[key]
             return value
-        except KeyError:
-            logger.debug(f"Config key '{key_path}' not found, returning default: {default}")
+        except (KeyError, TypeError):
+            logger.debug(f"Config key '{key_path}' not found or path invalid, returning default.")
             return default
-        except TypeError:
-             # Handle cases where value is not subscriptable (e.g., trying to access key in a list/str)
-            logger.warning(f"Config key path '{key_path}' encountered non-dictionary value.")
-            return default
-
 
     def get_scan_paths(self) -> List[Path]:
         """Gets the list of resolved scan paths."""
@@ -167,12 +116,9 @@ class ConfigManager:
     def get_duplicate_scan_paths(self) -> Optional[List[Path]]:
         """Gets the specific paths for duplicate scanning, or None to use general scan paths."""
         raw_paths = self.get('duplicates.scan_paths', [])
-        if not raw_paths: # If empty list in config, use general scan paths
+        if not raw_paths:
             return None
         return [Path(p) for p in raw_paths if isinstance(p, str)]
-
-    # Add more specific getter methods as needed for type safety or complex logic
-    # e.g., get_old_file_threshold_seconds() -> int
 
     def reload(self):
         """Reloads the configuration from the file."""
@@ -180,11 +126,6 @@ class ConfigManager:
         self.config = self._load_config()
         self._expand_paths()
 
-    # TODO: Implement methods for setting/saving configuration if needed
-    # def set(self, key_path: str, value: Any): ...
-    # def save(self): ...
-
-# Example Usage (typically done in main.py)
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     # Assume config.toml exists in the same directory for this example
